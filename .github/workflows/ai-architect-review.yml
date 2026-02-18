@@ -1,0 +1,240 @@
+name: AI Systems Architect Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**.py'
+      - '**.ipynb'
+      - '**.md'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  architectural-review:
+    name: Architectural Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v41
+        with:
+          files: |
+            **.py
+            **.ipynb
+            **.md
+            requirements.txt
+            pyproject.toml
+
+      - name: Setup Python
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Run Architectural Checks
+        if: steps.changed-files.outputs.any_changed == 'true'
+        id: arch-check
+        run: |
+          echo "## 🏗️ Architectural Review Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for common anti-patterns
+          python3 << 'EOF'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+          
+          issues = []
+          warnings = []
+          suggestions = []
+          
+          # Get changed files
+          changed_files = """${{ steps.changed-files.outputs.all_changed_files }}""".split()
+          
+          for file_path in changed_files:
+              if not file_path.endswith('.py'):
+                  continue
+                  
+              try:
+                  with open(file_path, 'r', encoding='utf-8') as f:
+                      content = f.read()
+                      
+                  # Security checks
+                  if re.search(r'api[_-]?key\s*=\s*["\'][^"\']+["\']', content, re.IGNORECASE):
+                      issues.append(f"❌ **CRITICAL**: Hardcoded API key detected in `{file_path}`")
+                  
+                  if re.search(r'password\s*=\s*["\'][^"\']+["\']', content, re.IGNORECASE):
+                      issues.append(f"❌ **CRITICAL**: Hardcoded password detected in `{file_path}`")
+                  
+                  # LangChain patterns
+                  if 'langchain' in content.lower():
+                      if not re.search(r'from langchain\.callbacks', content):
+                          suggestions.append(f"💡 Consider adding callback handlers for monitoring in `{file_path}`")
+                      
+                      if re.search(r'ChatOpenAI\([^)]*temperature\s*=\s*0\s*\)', content):
+                          warnings.append(f"⚠️ Temperature=0 may limit creativity in `{file_path}`. Consider if determinism is truly needed.")
+                      
+                      if 'ConversationBufferMemory' in content and not 'max_token_limit' in content:
+                          warnings.append(f"⚠️ Unbounded memory usage in `{file_path}`. Add token limits to prevent context overflow.")
+                  
+                  # RAG patterns
+                  if re.search(r'RecursiveCharacterTextSplitter|CharacterTextSplitter', content):
+                      if not re.search(r'chunk_size\s*=', content):
+                          issues.append(f"❌ Text splitter without explicit chunk_size in `{file_path}`")
+                      if not re.search(r'chunk_overlap\s*=', content):
+                          warnings.append(f"⚠️ Consider adding chunk_overlap for better context in `{file_path}`")
+                  
+                  # Vector store patterns
+                  if re.search(r'Chroma|FAISS|Pinecone|Weaviate', content):
+                      if not re.search(r'\.as_retriever\(', content):
+                          suggestions.append(f"💡 Consider using `.as_retriever()` pattern for better abstraction in `{file_path}`")
+                  
+                  # Agent patterns
+                  if 'initialize_agent' in content or 'AgentExecutor' in content:
+                      if not re.search(r'max_iterations\s*=', content):
+                          issues.append(f"❌ Agent without max_iterations in `{file_path}` - potential infinite loops")
+                      if not re.search(r'max_execution_time\s*=', content):
+                          warnings.append(f"⚠️ Consider adding max_execution_time to prevent runaway agents in `{file_path}`")
+                  
+                  # Prompt engineering
+                  if re.search(r'PromptTemplate|ChatPromptTemplate', content):
+                      if 'input_variables' not in content:
+                          warnings.append(f"⚠️ Prompt template may be missing explicit input_variables in `{file_path}`")
+                  
+                  # LlamaIndex patterns
+                  if 'llama_index' in content or 'llama-index' in content:
+                      if 'ServiceContext' in content and 'chunk_size' not in content:
+                          warnings.append(f"⚠️ ServiceContext without explicit chunk_size in `{file_path}`")
+                  
+                  # AutoGen patterns
+                  if 'autogen' in content.lower():
+                      if 'AssistantAgent' in content and not re.search(r'max_consecutive_auto_reply', content):
+                          warnings.append(f"⚠️ AssistantAgent without max_consecutive_auto_reply in `{file_path}`")
+                  
+                  # Error handling
+                  if 'openai' in content.lower() and not re.search(r'except.*Exception|try:', content):
+                      suggestions.append(f"💡 Add error handling for API calls in `{file_path}`")
+                  
+                  # Retry logic
+                  if re.search(r'openai|anthropic|cohere', content, re.IGNORECASE):
+                      if not re.search(r'retry|tenacity|backoff', content, re.IGNORECASE):
+                          suggestions.append(f"💡 Consider adding retry logic with exponential backoff in `{file_path}`")
+                  
+              except Exception as e:
+                  print(f"Error processing {file_path}: {e}", file=sys.stderr)
+          
+          # Output results
+          exit_code = 0
+          
+          if issues:
+              print("### ❌ Critical Issues Found\\n", file=sys.stderr)
+              for issue in issues:
+                  print(f"- {issue}\\n", file=sys.stderr)
+              exit_code = 1
+          
+          if warnings:
+              print("\\n### ⚠️ Warnings\\n", file=sys.stderr)
+              for warning in warnings:
+                  print(f"- {warning}\\n", file=sys.stderr)
+          
+          if suggestions:
+              print("\\n### 💡 Suggestions\\n", file=sys.stderr)
+              for suggestion in suggestions:
+                  print(f"- {suggestion}\\n", file=sys.stderr)
+          
+          if not issues and not warnings and not suggestions:
+              print("✅ No architectural issues detected!", file=sys.stderr)
+          
+          sys.exit(exit_code)
+          EOF
+
+      - name: Comment on PR
+        if: always() && steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let comment = `## 🏗️ AI Systems Architect Review\n\n`;
+            comment += `### Review Checklist\n\n`;
+            comment += `Please ensure the following have been addressed:\n\n`;
+            comment += `#### 🔒 Security\n`;
+            comment += `- [ ] No hardcoded API keys or secrets\n`;
+            comment += `- [ ] Environment variables used for configuration\n`;
+            comment += `- [ ] Input validation implemented\n`;
+            comment += `- [ ] Rate limiting considered\n\n`;
+            comment += `#### 🏛️ Architecture\n`;
+            comment += `- [ ] Proper separation of concerns\n`;
+            comment += `- [ ] Clean abstractions (no tight coupling)\n`;
+            comment += `- [ ] Design is production-scalable\n`;
+            comment += `- [ ] Error handling implemented\n`;
+            comment += `- [ ] Retry logic with exponential backoff\n\n`;
+            comment += `#### 🤖 AI Framework Best Practices\n`;
+            comment += `- [ ] Appropriate framework choice for the task\n`;
+            comment += `- [ ] Callback handlers for monitoring\n`;
+            comment += `- [ ] Token limits and cost management\n`;
+            comment += `- [ ] Memory management (bounded buffers)\n`;
+            comment += `- [ ] Agent guardrails (max iterations, timeouts)\n\n`;
+            comment += `#### 📚 RAG Implementation\n`;
+            comment += `- [ ] Appropriate chunk size and overlap\n`;
+            comment += `- [ ] Efficient retrieval strategy\n`;
+            comment += `- [ ] Embeddings model choice justified\n`;
+            comment += `- [ ] Vector store properly configured\n\n`;
+            comment += `#### 💬 Prompt Engineering\n`;
+            comment += `- [ ] Prompts are clear and specific\n`;
+            comment += `- [ ] Hallucination risks mitigated\n`;
+            comment += `- [ ] Input variables explicitly defined\n`;
+            comment += `- [ ] Few-shot examples where appropriate\n\n`;
+            comment += `#### 📊 Monitoring & Logging\n`;
+            comment += `- [ ] Adequate logging implemented\n`;
+            comment += `- [ ] Metrics collection considered\n`;
+            comment += `- [ ] Tracing for debugging\n\n`;
+            comment += `#### 📖 Documentation\n`;
+            comment += `- [ ] Code is well-documented\n`;
+            comment += `- [ ] Architecture decisions explained\n`;
+            comment += `- [ ] Usage examples provided\n\n`;
+            comment += `---\n`;
+            comment += `*This is an automated review. Please address the items above and request a human review for final approval.*\n`;
+            comment += `*For detailed guidelines, see [Review Guidelines](../blob/main/docs/review-guidelines/)*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
