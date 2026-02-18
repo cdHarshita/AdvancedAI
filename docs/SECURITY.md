@@ -386,3 +386,58 @@ If you discover a security vulnerability:
 - Encryption at rest and in transit
 - Incident response procedures
 - Regular security audits
+
+## 🔔 Recent Security Updates
+
+### Dependency Vulnerability Patches (2026-02-18)
+
+**CRITICAL vulnerabilities fixed:**
+
+1. **langchain-community**: Updated from 0.0.34 → 0.3.27
+   - Fixed XXE (XML External Entity) attacks
+   - Fixed pickle deserialization vulnerabilities
+
+2. **llama-index**: Updated from 0.10.30 → 0.13.0
+   - Fixed insecure temporary file creation
+   - Fixed SQL injection vulnerabilities
+
+3. **python-multipart**: Updated from 0.0.9 → 0.0.22
+   - Fixed arbitrary file write vulnerability
+   - Fixed DoS via malformed multipart data
+
+4. **semantic-kernel**: Updated from 0.9.8b1 → 1.39.3
+   - Fixed arbitrary file write via AI agent function calling
+
+See [SECURITY_ADVISORY.md](../SECURITY_ADVISORY.md) for complete details.
+
+### Security Scanning in CI/CD
+
+To prevent future vulnerabilities, add automated scanning:
+
+```yaml
+# .github/workflows/security.yml
+name: Security Scan
+on:
+  push:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run safety check
+        run: |
+          pip install safety
+          safety check --file requirements.txt
+```
+
+### Dependency Update Policy
+
+- **Critical security patches**: Within 24 hours
+- **High severity**: Within 1 week
+- **Medium severity**: Within 1 month
+- **Low severity**: Quarterly review
+
+All dependencies are now pinned to specific secure versions.
