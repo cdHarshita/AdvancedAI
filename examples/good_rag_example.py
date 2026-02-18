@@ -7,10 +7,9 @@ import os
 from typing import List, Optional
 from dotenv import load_dotenv
 
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.llms import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.callbacks import StdOutCallbackHandler
@@ -46,10 +45,13 @@ class ProductionRAGSystem:
         
         Args:
             collection_name: Name for the vector store collection
-            chunk_size: Size of text chunks (in tokens)
+            chunk_size: Size of text chunks (in characters by default)
             chunk_overlap: Overlap between chunks (for context continuity)
             k: Number of documents to retrieve
             temperature: LLM temperature (lower for factual responses)
+            
+        Note:
+            For token-based chunking, provide a custom length_function.
         """
         # Validate API key exists
         api_key = os.getenv("OPENAI_API_KEY")

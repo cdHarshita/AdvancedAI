@@ -5,15 +5,15 @@ This intentionally shows anti-patterns that the review system will catch.
 DO NOT USE THIS CODE IN PRODUCTION!
 """
 
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.llms import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.memory import ConversationBufferMemory
 
 # ❌ CRITICAL: Hardcoded API key (will be caught by security scan)
-OPENAI_API_KEY = "sk-proj-xxxxxxxxxxxxxxxxxxxx"
+# Using obviously fake key pattern to avoid confusion with real keys
+OPENAI_API_KEY = "sk-fake-example-key-for-demonstration-only-do-not-use"
 
 class BadRAGSystem:
     """
