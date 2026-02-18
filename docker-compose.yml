@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  # Main API Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+      - "9090:9090"
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - DATABASE_URL=postgresql://postgres:password@db:5432/ai_systems
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./chroma_db:/app/chroma_db
+    depends_on:
+      - db
+      - redis
+    networks:
+      - ai-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=ai_systems
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ai-network
+    restart: unless-stopped
+
+  # Redis for caching and rate limiting
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - ai-network
+    restart: unless-stopped
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9091:9090"
+    networks:
+      - ai-network
+    restart: unless-stopped
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - ai-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  ai-network:
+    driver: bridge
